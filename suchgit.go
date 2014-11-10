@@ -78,7 +78,14 @@ func (g *SuchGit) Setup() {
 
 type RepoResponse struct {
 	Name     string
+	Branch   string
 	Branches []string
+	Head     *git.Commit
+	Files    []string
+}
+
+func (rr *RepoResponse) Basepath() string {
+	return filepath.Join(rr.Name, rr.Branch, rr.Head.Id().String())
 }
 
 func (g *SuchGit) RepoHandler(w http.ResponseWriter, r *http.Request) {
@@ -86,12 +93,36 @@ func (g *SuchGit) RepoHandler(w http.ResponseWriter, r *http.Request) {
 	repo, err := git.OpenRepository(filepath.Join(g.RepoRoot, vars["repo"]))
 	if err != nil {
 		err := g.Tpl.ExecuteTemplate(w, "error.html", err)
-		panicOnError(err)
-	} else {
-		resp := RepoResponse{vars["repo"], listBranches(repo)}
-		err = g.Tpl.ExecuteTemplate(w, "repo.html", resp)
-		panicOnError(err)
+		panicOnError(err) // If we can't execute the template something is wrong
+		return
 	}
+
+	branch, err := repo.DwimReference(vars["branch"])
+	if err != nil {
+		branch, err = repo.Head()
+		if err != nil {
+			err := g.Tpl.ExecuteTemplate(w, "error.html", err)
+			panicOnError(err)
+			return
+		}
+	}
+
+	head, err := repo.LookupCommit(branch.Target())
+	if err != nil {
+		err := g.Tpl.ExecuteTemplate(w, "error.html", err)
+		panicOnError(err)
+		return
+	}
+	tree, err := head.Tree()
+	if err != nil {
+		err := g.Tpl.ExecuteTemplate(w, "error.html", err)
+		panicOnError(err)
+		return
+	}
+	resp := RepoResponse{vars["repo"], branch.Shorthand(), listBranches(repo),
+		head, listFiles("", tree)}
+	err = g.Tpl.ExecuteTemplate(w, "repo.html", &resp)
+	panicOnError(err)
 }
 
 func main() {

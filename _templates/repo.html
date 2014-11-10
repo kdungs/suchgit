@@ -1,13 +1,36 @@
 {{ template "header.html" }}
+{{ $repo := . }}
   <main>
     <header>
-      <h1>{{ .Name }}</h1>
+      <div class="pull-right dropdown">
+        <i class="fa fa-code-fork"></i> Branch: 
+        <button class="btn btn-default dropdown-toggle" type="button" id="dropdownMenu1" data-toggle="dropdown">
+          {{ $repo.Branch }}
+          <span class="caret"></span>
+        </button>
+        <ul class="dropdown-menu" role="menu" aria-labelledby="dropdownMenu1">
+          {{ range $branch := $repo.Branches }}
+          <li role="presentation"><a role="menuitem" tabindex="-1" href="/{{ $repo.Name }}/{{ $branch }}">{{ $branch }}</a></li>
+          {{ end }}
+        </ul>
+      </div>
+      <h1><i class="fa fa-code"></i> {{ $repo.Name }}</h1>
     </header>
-    <ul class="nav nav-pills nav-stacked">
-      {{ $name := .Name }}
-      {{ range .Branches }}
-      <li><a href="/{{ $name }}/{{ . }}">{{ . }}</a></li>
-      {{ end }}
-    </ul>
+
+    <hr>
+      
+    <section class="panel panel-default">
+      <header class="panel-heading">
+        <h2 class="panel-title">{{ $repo.Head.Message }}</h2>
+      </header>
+      <article class="panel-body">
+        <ul>
+          {{ range $file := $repo.Files }}
+          <li><a href="/{{ $repo.Basepath}}/{{ $file }}">{{ $file }}</a></li>
+          {{ end }}
+        </ul>
+      </article>
+    </section>
+
   </main>
 {{ template "footer.html" }}
