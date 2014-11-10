@@ -1,0 +1,13 @@
+{{ template "header.html" }}
+  <main>
+    <header>
+      <h1>{{ .Name }}</h1>
+    </header>
+    <ul class="nav nav-pills nav-stacked">
+      {{ $name := .Name }}
+      {{ range .Branches }}
+      <li><a href="/{{ $name }}/{{ . }}">{{ . }}</a></li>
+      {{ end }}
+    </ul>
+  </main>
+{{ template "footer.html" }}

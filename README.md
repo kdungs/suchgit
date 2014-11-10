@@ -1,4 +1,5 @@
-suchgit
-=======
+# Such Git!
 
-Wow! Such git! Much go! Amaze!
+Wow! Such Git! Much Go! Amaze!
+
+A small web-interface for Git written in Go.

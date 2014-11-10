@@ -1,0 +1,12 @@
+{{ template "header.html" }}
+  <main>
+    <header>
+      <h1>Repositories</h1>
+    </header>
+    <ul class="nav nav-pills nav-stacked">
+      {{ range . }}
+      <li><a href="/{{ . }}">{{ . }}</a></li>
+      {{ end }}
+    </ul>
+  </main>
+{{ template "footer.html" }}
