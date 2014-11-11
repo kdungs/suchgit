@@ -1,0 +1,36 @@
+{{ template "header.html" }}
+{{ $resp := . }}
+  <main>
+    <header>
+      <div class="pull-right dropdown">
+        <i class="fa fa-code-fork"></i>
+        <button class="btn btn-default dropdown-toggle" type="button" id="dropdownMenu1" data-toggle="dropdown">
+          {{ $resp.Repository.Ref }}
+          <span class="caret"></span>
+        </button>
+        <ul class="dropdown-menu" role="menu" aria-labelledby="dropdownMenu1">
+          {{ range $ref := $resp.Repository.Refs }}
+          <li role="presentation"><a role="menuitem" tabindex="-1" href="/{{ $resp.Repository.Name }}/{{ $ref }}">{{ $ref }}</a></li>
+          {{ end }}
+        </ul>
+      </div>
+      <h1><i class="fa fa-code"></i> {{ $resp.Repository.Name }} <small>{{ $resp.Root }}</small></h1>
+    </header>
+
+    <hr>
+      
+    <section class="panel panel-default">
+      <header class="panel-heading">
+        <h2 class="panel-title">{{ $resp.Repository.Commit.Message }}</h2>
+      </header>
+      <article class="panel-body">
+        <ul>
+          {{ range $f := $resp.Files }}
+          <li><a href="/{{ $resp.Repository.Name }}/tree/{{ $resp.Repository.Ref }}/{{ $resp.Root }}/{{ $f }}">{{ $f }}</a></li>
+          {{ end }}
+        </ul>
+      </article>
+    </section>
+
+  </main>
+{{ template "footer.html" }}

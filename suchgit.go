@@ -1,8 +1,12 @@
+/**
+What about https://stackoverflow.com/questions/20932078/where-are-the-project-files-stored-in-a-git-repository-git-folder
+*/
+
 package main
 
 import (
+	"fmt"
 	"html/template"
-	"log"
 	"net/http"
 	"path/filepath"
 
@@ -10,124 +14,135 @@ import (
 	"github.com/libgit2/git2go"
 )
 
-func panicOnError(err error) {
-	if err != nil {
-		panic(err)
-	}
-}
-
-func listRepos(path string) []string {
-	repos, err := filepath.Glob(filepath.Join(path, "*.git"))
-	panicOnError(err)
-	for i, repo := range repos {
-		repos[i] = filepath.Base(repo)
-	}
-	return repos
-}
-
-func listBranches(repo *git.Repository) []string {
-	refit, err := repo.NewReferenceIterator()
-	panicOnError(err)
-	branches := make([]string, 0)
-	for {
-		ref, err := refit.Next()
-		if err != nil {
-			break // Reached end of iterator
-		}
-		if ref.IsBranch() {
-			branches = append(branches, ref.Shorthand())
-		}
-	}
-	return branches
-}
-
-func listFiles(folder string, tree *git.Tree) []string {
-	files := make([]string, 0, tree.EntryCount())
-	for i := uint64(0); i < tree.EntryCount(); i++ {
-		files = append(files, tree.EntryByIndex(i).Name)
-	}
-	return files
-}
-
 type SuchGit struct {
 	RepoRoot string
 	Tpl      *template.Template
 	Router   *mux.Router
 }
 
-func (g *SuchGit) Setup() {
+func NewSuchGit(repoRoot string) *SuchGit {
+	sg := new(SuchGit)
+	sg.RepoRoot = repoRoot
+	sg.Setup()
+	return sg
+}
+
+func (sg *SuchGit) Setup() {
 	var err error
-	g.Tpl, err = template.ParseFiles(
+	sg.Tpl, err = template.ParseFiles(
 		"_templates/header.html",
 		"_templates/footer.html",
 		"_templates/error.html",
+		"_templates/tree.html",
 		"_templates/repos.html",
 		"_templates/repo.html")
-	panicOnError(err)
-
-	g.Router = mux.NewRouter()
-
-	g.Router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		err := g.Tpl.ExecuteTemplate(w, "repos.html", listRepos(g.RepoRoot))
-		panicOnError(err)
-	})
-
-	g.Router.HandleFunc("/{repo}", g.RepoHandler)
-	g.Router.HandleFunc("/{repo}/{branch}", g.RepoHandler)
-}
-
-type RepoResponse struct {
-	Name     string
-	Branch   string
-	Branches []string
-	Head     *git.Commit
-	Files    []string
-}
-
-func (rr *RepoResponse) Basepath() string {
-	return filepath.Join(rr.Name, rr.Branch, rr.Head.Id().String())
-}
-
-func (g *SuchGit) RepoHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	repo, err := git.OpenRepository(filepath.Join(g.RepoRoot, vars["repo"]))
 	if err != nil {
-		err := g.Tpl.ExecuteTemplate(w, "error.html", err)
-		panicOnError(err) // If we can't execute the template something is wrong
+		panic(err)
+	}
+
+	sg.Router = mux.NewRouter()
+	sg.Router.HandleFunc("/", sg.HandleIndex)
+	sg.Router.HandleFunc("/{repo}/tree/{ref}/{folder}", sg.HandleTree)
+	sg.Router.HandleFunc("/{repo}/tree/{ref}", sg.HandleTree) // defaults to tree=/
+	sg.Router.HandleFunc("/{repo}/tree/", sg.HandleTree)      // defaults to ref=head
+	sg.Router.HandleFunc("/{repo}", sg.HandleTree)            // same as above
+	sg.Router.HandleFunc("/{repo}/commits/{ref}", sg.HandleCommits)
+	sg.Router.HandleFunc("/{repo}/commits", sg.HandleCommits) // defaults to ref=head
+	sg.Router.HandleFunc("/{repo}/commit/{ref}", sg.HandleCommit)
+	sg.Router.HandleFunc("/{repo}/commit", sg.HandleCommit) // defaults to ref=head
+}
+
+func (sg *SuchGit) ShowError(w http.ResponseWriter, err error) {
+	err_ := sg.Tpl.ExecuteTemplate(w, "error.html", err)
+	if err_ != nil {
+		fmt.Fprintf(w, "Error: %s", err_)
+		fmt.Fprintf(w, "From Error: %s", err)
+	}
+}
+
+func (sg *SuchGit) ListRepositories() []string {
+	repos, err := filepath.Glob(filepath.Join(sg.RepoRoot, "*.git"))
+	if err != nil {
+		return make([]string, 0)
+	}
+	for i, repo := range repos {
+		repos[i] = filepath.Base(repo)
+	}
+	return repos
+}
+
+func (sg *SuchGit) HandleIndex(w http.ResponseWriter, r *http.Request) {
+	repos := sg.ListRepositories()
+	err := sg.Tpl.ExecuteTemplate(w, "repos.html", repos)
+	if err != nil {
+		fmt.Fprintf(w, "Error: %s", err)
+	}
+}
+
+func (sg *SuchGit) HandleTree(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	repoName := vars["repo"]
+	refName, set := vars["ref"]
+	if !set {
+		refName = "master"
+	}
+	folderName, set := vars["folder"]
+	if !set {
+		folderName = ""
+	}
+
+	repo, err := git.OpenRepository(filepath.Join(sg.RepoRoot, repoName))
+	if err != nil {
+		sg.ShowError(w, err)
 		return
 	}
 
-	branch, err := repo.DwimReference(vars["branch"])
+	ref, err := repo.DwimReference(refName)
 	if err != nil {
-		branch, err = repo.Head()
+		sg.ShowError(w, err)
+		return
+	}
+
+	oid := ref.Target()
+	commit, err := repo.LookupCommit(oid)
+	if err != nil {
+		sg.ShowError(w, err)
+		return
+	}
+
+	folder, err := commit.Tree()
+	if err != nil {
+		sg.ShowError(w, err)
+		return
+	}
+
+	if folderName != "" {
+		folderEntry, err := folder.EntryByPath(folderName)
 		if err != nil {
-			err := g.Tpl.ExecuteTemplate(w, "error.html", err)
-			panicOnError(err)
+			sg.ShowError(w, err)
+			return
+		}
+		oid = folderEntry.Id
+		folder, err = repo.LookupTree(oid)
+		if err != nil {
+			sg.ShowError(w, err)
 			return
 		}
 	}
 
-	head, err := repo.LookupCommit(branch.Target())
-	if err != nil {
-		err := g.Tpl.ExecuteTemplate(w, "error.html", err)
-		panicOnError(err)
-		return
+	count := folder.EntryCount()
+	files := make([]string, 0, count)
+	for i := uint64(0); i < count; i++ {
+		files = append(files, folder.EntryByIndex(i).Name)
 	}
-	tree, err := head.Tree()
+
+	resp := TreeResponse{RepositoryResponse{repoName, refName, make([]string, 0), commit}, folderName, files}
+	err = sg.Tpl.ExecuteTemplate(w, "tree.html", resp)
 	if err != nil {
-		err := g.Tpl.ExecuteTemplate(w, "error.html", err)
-		panicOnError(err)
-		return
+		sg.ShowError(w, err)
 	}
-	resp := RepoResponse{vars["repo"], branch.Shorthand(), listBranches(repo),
-		head, listFiles("", tree)}
-	err = g.Tpl.ExecuteTemplate(w, "repo.html", &resp)
-	panicOnError(err)
 }
 
-func main() {
-	gitorade := SuchGit{"_repos", nil, nil}
-	gitorade.Setup()
-	http.Handle("/", gitorade.Router)
-	log.Fatal(http.ListenAndServe(":8080", nil))
-}
+func (sg *SuchGit) HandleCommits(w http.ResponseWriter, r *http.Request) {}
+
+func (sg *SuchGit) HandleCommit(w http.ResponseWriter, r *http.Request) {}
