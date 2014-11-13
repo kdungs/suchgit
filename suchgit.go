@@ -1,7 +1,3 @@
-/**
-What about https://stackoverflow.com/questions/20932078/where-are-the-project-files-stored-in-a-git-repository-git-folder
-*/
-
 package main
 
 import (
@@ -33,6 +29,7 @@ func (sg *SuchGit) Setup() {
 		"_templates/header.html",
 		"_templates/footer.html",
 		"_templates/error.html",
+		"_templates/blob.html",
 		"_templates/tree.html",
 		"_templates/repos.html",
 		"_templates/repo.html")
@@ -42,6 +39,8 @@ func (sg *SuchGit) Setup() {
 
 	sg.Router = mux.NewRouter()
 	sg.Router.HandleFunc("/", sg.HandleIndex)
+	sg.Router.HandleFunc("/{repo}/blob/{ref}/{file}", sg.HandleBlob)
+	sg.Router.HandleFunc("/{repo}/blob/{file}", sg.HandleBlob) // defaults to ref=head
 	sg.Router.HandleFunc("/{repo}/tree/{ref}/{folder}", sg.HandleTree)
 	sg.Router.HandleFunc("/{repo}/tree/{ref}", sg.HandleTree) // defaults to tree=/
 	sg.Router.HandleFunc("/{repo}/tree/", sg.HandleTree)      // defaults to ref=head
@@ -84,6 +83,62 @@ func (sg *SuchGit) HandleIndex(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		fmt.Fprintf(w, "Error: %s", err)
 	}
+}
+
+func (sg *SuchGit) HandleBlob(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	repoName := vars["repo"]
+	repo, err := git.OpenRepository(filepath.Join(sg.RepoRoot, repoName))
+	if err != nil {
+		sg.ShowError(w, err)
+		return
+	}
+	var oid *git.Oid
+	refName, set := vars["ref"]
+	if set {
+		oid, err = git.NewOid(refName)
+		if err != nil { // It's a reference!
+			ref, err := repo.DwimReference(refName)
+			if err != nil {
+				sg.ShowError(w, err)
+				return
+			}
+			oid = ref.Target()
+		}
+	} else {
+		ref, err := repo.Head()
+		if err != nil {
+			sg.ShowError(w, err)
+			return
+		}
+		oid = ref.Target()
+	}
+	commit, err := repo.LookupCommit(oid)
+	if err != nil {
+		sg.ShowError(w, err)
+		return
+	}
+	tree, err := commit.Tree()
+	if err != nil {
+		sg.ShowError(w, err)
+		return
+	}
+	fileEntry, err := tree.EntryByPath(vars["file"])
+	if err != nil {
+		sg.ShowError(w, err)
+		return
+	}
+	if fileEntry.Type != git.ObjectBlob {
+		fmt.Fprintf(w, "File has to be blob!\n")
+		return
+	}
+	oid = fileEntry.Id
+	file, err := repo.LookupBlob(oid)
+	if err != nil {
+		fmt.Fprintf(w, "326 Error: %s\n", err)
+		return
+	}
+	sg.Tpl.ExecuteTemplate(w, "blob.html", string(file.Contents()))
 }
 
 func (sg *SuchGit) HandleTree(w http.ResponseWriter, r *http.Request) {
@@ -149,8 +204,6 @@ func (sg *SuchGit) HandleTree(w http.ResponseWriter, r *http.Request) {
 		sg.ShowError(w, err)
 	}
 }
-
-func (sg *SuchGit) HandleBlob(w http.ResponseWriter, r *http.Request) {}
 
 func (sg *SuchGit) HandleCommits(w http.ResponseWriter, r *http.Request) {}
 
