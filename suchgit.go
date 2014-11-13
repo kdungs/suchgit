@@ -46,6 +46,8 @@ func (sg *SuchGit) Setup() {
 	sg.Router.HandleFunc("/{repo}/tree/{ref}", sg.HandleTree) // defaults to tree=/
 	sg.Router.HandleFunc("/{repo}/tree/", sg.HandleTree)      // defaults to ref=head
 	sg.Router.HandleFunc("/{repo}", sg.HandleTree)            // same as above
+	sg.Router.HandleFunc("/{repo}/blob/{ref}/{file}", sg.HandleBlob)
+	sg.Router.HandleFunc("/{repo}/blob/{file}", sg.HandleBlob) // defaults to ref=head
 	sg.Router.HandleFunc("/{repo}/commits/{ref}", sg.HandleCommits)
 	sg.Router.HandleFunc("/{repo}/commits", sg.HandleCommits) // defaults to ref=head
 	sg.Router.HandleFunc("/{repo}/commit/{ref}", sg.HandleCommit)
@@ -142,6 +144,8 @@ func (sg *SuchGit) HandleTree(w http.ResponseWriter, r *http.Request) {
 		sg.ShowError(w, err)
 	}
 }
+
+func (sg *SuchGit) HandleBlob(w http.ResponseWriter, r *http.Request) {}
 
 func (sg *SuchGit) HandleCommits(w http.ResponseWriter, r *http.Request) {}
 
