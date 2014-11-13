@@ -52,6 +52,11 @@ func (sg *SuchGit) Setup() {
 	sg.Router.HandleFunc("/{repo}/commits", sg.HandleCommits) // defaults to ref=head
 	sg.Router.HandleFunc("/{repo}/commit/{ref}", sg.HandleCommit)
 	sg.Router.HandleFunc("/{repo}/commit", sg.HandleCommit) // defaults to ref=head
+	// --- TESTING ---
+	sg.Router.HandleFunc("/test/{repo}/file/{commit}/{filename}", sg.TestFileHandler)
+	sg.Router.HandleFunc("/test/{repo}/diff/{id1}/{id2}", sg.TestDiffHandler)
+	sg.Router.HandleFunc("/test/{repo}/{ref}", sg.TestHandler)
+	sg.Router.HandleFunc("/test/{repo}", sg.TestHandler)
 }
 
 func (sg *SuchGit) ShowError(w http.ResponseWriter, err error) {
@@ -150,3 +155,176 @@ func (sg *SuchGit) HandleBlob(w http.ResponseWriter, r *http.Request) {}
 func (sg *SuchGit) HandleCommits(w http.ResponseWriter, r *http.Request) {}
 
 func (sg *SuchGit) HandleCommit(w http.ResponseWriter, r *http.Request) {}
+
+func (sg *SuchGit) TestHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	repoName := vars["repo"]
+	repo, err := git.OpenRepository(filepath.Join(sg.RepoRoot, repoName+".git"))
+	if err != nil {
+		fmt.Fprintf(w, "Error: %s\n", err)
+		return
+	}
+
+	refName, refSet := vars["ref"]
+	if refSet {
+		ref, err := repo.DwimReference(refName)
+		if err != nil {
+			fmt.Fprintf(w, "Error: %s\n", err)
+			return
+		}
+		fmt.Fprintf(w, "%s (%s)\n", ref.Shorthand(), ref.Name())
+		oid := ref.Target()
+		commit, err := repo.LookupCommit(oid)
+		if err != nil {
+			fmt.Fprintf(w, "Error: %s\n", err)
+			return
+		}
+		for ; commit.ParentCount() > 0; commit = commit.Parent(0) {
+			fmt.Fprintf(w, "[%s]\n%s\n\n", commit.Id().String(), commit.Message())
+		}
+	} else {
+		refit, err := repo.NewReferenceIterator()
+		if err != nil {
+			fmt.Fprintf(w, "Error: %s\n", err)
+			return
+		}
+		head, err := repo.Head()
+		if err != nil {
+			fmt.Fprintf(w, "Error: %s\n", err)
+			return
+		}
+		for {
+			ref, err := refit.Next()
+			if err != nil {
+				break // end of iterator
+			}
+			if ref.Name() == head.Name() {
+				fmt.Fprintf(w, "*")
+			} else {
+				fmt.Fprintf(w, " ")
+			}
+			if ref.IsBranch() {
+				fmt.Fprintf(w, "[Branch]")
+			} else if ref.IsTag() {
+				fmt.Fprintf(w, "[Tag]   ")
+			} else if ref.IsRemote() {
+				fmt.Fprintf(w, "[Remote]")
+			} else {
+				fmt.Fprintf(w, "--------")
+			}
+			fmt.Fprintf(w, " %25s (%s)\n", ref.Shorthand(), ref.Name())
+		}
+
+	}
+}
+
+func (sg *SuchGit) TestDiffHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	repoName := vars["repo"]
+	repo, err := git.OpenRepository(filepath.Join(sg.RepoRoot, repoName+".git"))
+	if err != nil {
+		fmt.Fprintf(w, "Error: %s\n", err)
+		return
+	}
+
+	id1, err := git.NewOid(vars["id1"])
+	if err != nil {
+		fmt.Fprintf(w, "Error: %s\n", err)
+		return
+	}
+	commit1, err := repo.LookupCommit(id1)
+	if err != nil {
+		fmt.Fprintf(w, "Error: %s\n", err)
+		return
+	}
+	tree1, err := commit1.Tree()
+	if err != nil {
+		fmt.Fprintf(w, "Error: %s\n", err)
+		return
+	}
+	//id2, err := git.NewOid(vars["id2"])
+	//if err != nil {
+	//	fmt.Fprintf(w, "Error: %s\n", err)
+	//	return
+	//}
+	//commit2, err := repo.LookupCommit(id2)
+	//if err != nil {
+	//	fmt.Fprintf(w, "Error: %s\n", err)
+	//	return
+	//}
+	//tree2, err := commit2.Tree()
+	//if err != nil {
+	//	fmt.Fprintf(w, "Error: %s\n", err)
+	//	return
+	//}
+	defaultDiffOptions, err := git.DefaultDiffOptions()
+	if err != nil {
+		fmt.Fprintf(w, "Error: %s\n", err)
+		return
+	}
+	diff, err := repo.DiffTreeToTree(nil, tree1, &defaultDiffOptions)
+	if err != nil {
+		fmt.Fprintf(w, "Error: %s\n", err)
+		return
+	}
+	deltas, err := diff.NumDeltas()
+	if err != nil {
+		fmt.Fprintf(w, "Error: %s\n", err)
+		return
+	}
+	for i := 0; i < deltas; i++ {
+		patch, err := diff.Patch(i)
+		if err != nil {
+			fmt.Fprintf(w, "Error: %s\n", err)
+			return
+		}
+		patchString, err := patch.String()
+		if err != nil {
+			fmt.Fprintf(w, "Error: %s\n", err)
+			return
+		}
+		fmt.Fprintf(w, "%s\n", patchString)
+	}
+}
+
+func (sg *SuchGit) TestFileHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	repoName := vars["repo"]
+	repo, err := git.OpenRepository(filepath.Join(sg.RepoRoot, repoName+".git"))
+	if err != nil {
+		fmt.Fprintf(w, "Error: %s\n", err)
+		return
+	}
+
+	id1, err := git.NewOid(vars["commit"])
+	if err != nil {
+		fmt.Fprintf(w, "Error: %s\n", err)
+		return
+	}
+	commit1, err := repo.LookupCommit(id1)
+	if err != nil {
+		fmt.Fprintf(w, "Error: %s\n", err)
+		return
+	}
+	tree1, err := commit1.Tree()
+	if err != nil {
+		fmt.Fprintf(w, "Error: %s\n", err)
+		return
+	}
+	fileEntry, err := tree1.EntryByPath(vars["filename"])
+	if err != nil {
+		fmt.Fprintf(w, "Error: %s\n", err)
+		return
+	}
+	if fileEntry.Type != git.ObjectBlob {
+		fmt.Fprintf(w, "File has to be blob!\n")
+		return
+	}
+	oid := fileEntry.Id
+	file, err := repo.LookupBlob(oid)
+	if err != nil {
+		fmt.Fprintf(w, "326 Error: %s\n", err)
+		return
+	}
+	fmt.Fprintf(w, "<pre>%s</pre>\n", file.Contents())
+}
