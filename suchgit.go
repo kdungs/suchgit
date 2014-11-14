@@ -39,9 +39,9 @@ func (sg *SuchGit) Setup() {
 
 	sg.Router = mux.NewRouter()
 	sg.Router.HandleFunc("/", sg.HandleIndex)
-	sg.Router.HandleFunc("/{repo}/blob/{ref}/{file}", sg.HandleBlob)
-	sg.Router.HandleFunc("/{repo}/blob/{file}", sg.HandleBlob) // defaults to ref=head
-	sg.Router.HandleFunc("/{repo}/tree/{ref}/{folder}", sg.HandleTree)
+	sg.Router.HandleFunc("/{repo}/blob/{ref}/{file:.*}", sg.HandleBlob)
+	sg.Router.HandleFunc("/{repo}/blob/{file:.*}", sg.HandleBlob) // defaults to ref=head
+	sg.Router.HandleFunc("/{repo}/tree/{ref}/{folder:.*}", sg.HandleTree)
 	sg.Router.HandleFunc("/{repo}/tree/{ref}", sg.HandleTree) // defaults to tree=/
 	sg.Router.HandleFunc("/{repo}/tree/", sg.HandleTree)      // defaults to ref=head
 	sg.Router.HandleFunc("/{repo}", sg.HandleTree)            // same as above
